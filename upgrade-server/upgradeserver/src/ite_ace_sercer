@@ -1,0 +1,120 @@
+
+#include "ace/Log_Msg.h"
+#include "ace/INET_Addr.h"
+#include "ace/SOCK_Stream.h"
+#include "ace/SOCK_Acceptor.h"
+#include "ace/SString.h"
+#include "ite_upgrade_server.h"
+#include "ace/Reactor.h"  
+#include "ace/Svc_Handler.h"   
+#include "ace/Synch.h"  
+#include "ace/Acceptor.h" 
+/* 
+ * *用于处理客户端连接的处理器 
+ * *当客户端程序连接请求建立时，open方法将会被回调执行 
+ * */  
+class AcceptorHandler : public ACE_Svc_Handler<ACE_SOCK_STREAM,ACE_NULL_SYNCH>  
+{  
+    public:  
+        int open(void*)  
+        {  
+            ACE_DEBUG((LM_DEBUG,ACE_TEXT("connection established\n")));  
+            return 0;  
+        }  
+}; 
+
+typedef ACE_Acceptor<AcceptorHandler, ACE_SOCK_ACCEPTOR> UpgradeClientAcceptor;
+
+class UpgradeAcceptor :public UpgradeClientAcceptor
+{
+    public:
+        int get_local_addr (ACE_Addr &addr) const
+        {
+            ACE_SOCK_Acceptor* pACE_SOCK_Acceptor = (ACE_SOCK_Acceptor*)&peer_acceptor_;
+            pACE_SOCK_Acceptor->get_local_addr(addr);
+            return 0;
+        }
+
+};
+class CUpgradeServer{
+    public:
+        int open(int *nport){
+            u_short port_number = 0;
+            ACE_INET_Addr  port_to_listen(port_number,INADDR_ANY), client_addr;
+            UpgradeAcceptor *pAcceptor = new UpgradeAcceptor;
+            pAcceptor->open(port_to_listen,ACE_Reactor::instance(),ACE_NONBLOCK);
+
+            pAcceptor->get_local_addr(port_to_listen);
+            *nport = port_to_listen.get_port_number();
+            return 0;
+        }
+        
+        UpgradeAcceptor*    m_pUpgradeAcceptor;
+};
+
+int ACE_TMAIN_SERVER(int argc, char** argv)
+{
+    u_short port_number = 0;
+    ACE_INET_Addr  port_to_listen(port_number,INADDR_ANY), client_addr;
+    ACE_SOCK_Acceptor  acceptor;
+    ACE_SOCK_Stream  client;
+    ACE_TCHAR  strClientAddr[64], strBuffer[1024];
+    ssize_t  bytes_received = 0;
+    int port=0;
+    // ACE_Acceptor<AcceptorHandler,ACE_SOCK_ACCEPTOR>  aAcceptor(port_to_listen,ACE_Reactor::instance(),ACE_NONBLOCK);  
+    CUpgradeServer ite_upgrader;
+    ite_upgrader.open(&port);
+    // ACE_Reactor::instance()->get_local_addr(port_to_listen);
+    printf("port is %d \n",port);
+    ACE_Reactor::instance()->run_reactor_event_loop();
+    while(1)
+    {
+        //ACE_Reactor::instance()->handle_events();
+    }
+    return 0;
+    if (acceptor.open(port_to_listen, 1) == -1)
+    {
+        ACE_DEBUG((LM_ERROR, ACE_TEXT("--->%p\n"), ACE_TEXT("acceptor.open")));
+        return -100;
+    }
+
+
+    acceptor.get_local_addr(port_to_listen);
+    printf("port is %d \n",port_to_listen.get_port_number());
+    while (1)
+    {
+        if (acceptor.accept(client,
+                            &client_addr) == -1)
+        {
+            ACE_DEBUG( (LM_ERROR, ACE_TEXT("(%p| %t) failed to accept\n"),
+                  ACE_TEXT("client connection")));
+            acceptor.close();
+            break;
+        }
+
+        client_addr.addr_to_string(strClientAddr,
+                                   sizeof(strClientAddr));
+        ACE_DEBUG((LM_INFO, ACE_TEXT("client %s connected\n"), strClientAddr));
+        ACE_OS::memset(strBuffer, 0, sizeof(strBuffer));
+        if ((bytes_received = client.recv(strBuffer, sizeof(strBuffer)))== -1)
+        {
+            ACE_DEBUG( (LM_ERROR, ACE_TEXT("%p | %t received failed\n"), ACE_TEXT("cleint.recv")) );
+            client.close();
+            break;
+        }
+
+        ACE_DEBUG(
+            (LM_INFO, ACE_TEXT("receive \
+                                   from client: [%d]%s\n"),
+             bytes_received, strBuffer));
+
+        client.send_n(strBuffer,
+                      ACE_OS::strlen(strBuffer));
+
+        client.close();
+    }
+
+    acceptor.close();
+    return 0;
+}
+

@@ -1,0 +1,4 @@
+#!/bin/sh
+#This script used for copy file to target directory
+BUILD_DIR=$1
+THIS_NAME=$2
